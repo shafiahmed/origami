@@ -57,7 +57,7 @@
         test (cv/new-mat size size cv/CV_8UC3 rgb/red-1-) ; 255
         org (cv/new-mat size size cv/CV_8SC3 (cv/new-scalar 0 0 127)) ;max is 127
         cvimg (cv/clone org)
-        ndarray (ndarray/array (cv/->bytes cvimg) [1 3 size size])]
+        ndarray (ndarray/array (cv/->bytes cvimg) [1 (.channels test) size size])]
     (apb test)
 
     (.put cvimg 0 0 (byte-array (mx-shape/->vec ndarray)))
@@ -78,9 +78,9 @@
   (let [org (-> "doc/origami.jpg" (cv/imread) )
         img (cv/convert-to! (cv/clone org) cv/CV_8SC3 0.5)
         _ (cv/add! img (cv/new-scalar -103.939 -116.779 -123.68))
-        ndarray (ndarray/array (cv/->bytes img) [1 3  (.height img) (.width img)])
+        ndarray (ndarray/array (cv/->bytes img) [1 (.channels img) (.height img) (.width img)])
         ]
-    (.put img 0 0 (byte-array (mx-shape/->vec ndarray)))
+    (cv/>> img (byte-array (mx-shape/->vec ndarray)))
     _ (cv/add! img (cv/new-scalar 103.939 116.779 123.68))
     (cv/convert-to! img cv/CV_8UC3 2)
     (cv/imwrite img "target/hello.png")))
@@ -92,3 +92,10 @@
          mat (u/merge3! target bytes)] 
      (cv/imwrite target "target/output.png")
      (is (= (cv/->string target)  (cv/->string org)))))
+
+; (defn ->ndarray [img]
+;    (ndarray/array (cv/->bytes img) [1 (.channels img) (.height img) (.width img)]))
+
+; (defn ndarray->mat [ndarr]
+  
+;   )

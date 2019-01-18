@@ -1,10 +1,8 @@
 
 (ns opencv4.utils
-  (:use [gorilla-repl.image])
   (:require
     [opencv4.core :as cv]
-    [opencv4.video :as vid]
-    )
+    [opencv4.video :as vid])
   (:import [org.opencv.core Size CvType Core Mat MatOfByte]
     [org.opencv.imgcodecs Imgcodecs]
     [org.opencv.videoio VideoCapture]
@@ -13,6 +11,10 @@
     [java.net URL]
     [java.nio.channels ReadableByteChannel Channels]
     [java.io File FileOutputStream]
+
+    [java.awt Image]
+    [java.awt.image BufferedImage]
+    [java.io ByteArrayOutputStream]
 
     [javax.imageio ImageIO]
     [javax.swing ImageIcon JFrame JLabel]
@@ -25,33 +27,56 @@
 (defn clean-up-namespace[]
   (map #(ns-unmap *ns* %) (keys (ns-interns *ns*))))
 
-;;;
-;;;
+
+;;;;
+; BUFFERED IMAGE
+;;;;
+
+(defn mat-to-buffered-image [src]
+  (let[ matOfBytes (MatOfByte.)]
+  (Imgcodecs/imencode ".jpg" src matOfBytes)
+  (ImageIO/read
+    (java.io.ByteArrayInputStream. (.toArray matOfBytes)))))
+(def mat->image mat-to-buffered-image)
+
+(defn image->bytes [^Image image ^String type width height]
+  (let [bi (BufferedImage. width height (if (#{"png" "gif"} type)
+                                          BufferedImage/TYPE_INT_ARGB
+                                          BufferedImage/TYPE_INT_RGB))
+        baos (ByteArrayOutputStream.)]
+    (doto (.getGraphics bi) (.drawImage image 0 0 width height nil))
+    (ImageIO/write bi type baos)
+    (.toByteArray baos)))
+
+(defn buffered-image-to-mat[bi]
+  (let [mat (Mat. (.getHeight bi) (.getWidth bi) (CvType/CV_8UC3))
+  bytes
+  (-> bi
+    (.getRaster)
+    (.getDataBuffer)
+    (.getData)
+    )]
+    (.put mat 0 0 bytes)
+    mat))
+(def image->mat buffered-image-to-mat)
+
+(defn image<-url [url]
+  (let[ connection (->  url
+  (java.net.URL.)
+    (.openConnection))]
+    (.setRequestProperty connection
+      "User-Agent"
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/26.0.1410.65 Safari/537.31")
+      (ImageIO/read (.getInputStream connection))))
+
+
+;;;;
+; LOAD UNLOAD
+;;;;
 
 (defn ->cv1 [bytes h w]
   (let [u (cv/new-mat h w cv/CV_8U)]
         (cv/>> u (byte-array bytes))))
-
-(defn split3! [org]
-  (let [splits (cv/split! org)
-        [r g b :as arrays] (reverse (map cv/->bytes splits))]
-    (byte-array (for [ar arrays i ar] i)))) 
-(def mat->flat-rgb-array split3!)
-
-(defn merge3! [mat bytes]
-  (let [h (.height mat)
-        w (.width mat)
-        spatial-size (* h w)
-        byte-arrays (reverse (partition spatial-size bytes))
-        mats (map #(->cv1 % h w) byte-arrays)]
-    (cv/merge! mats mat)))
-
-;;;
-; MAT OPERATIONS
-;;;
-(defn resize-by[ mat factor]
-  (let [height (.rows mat) width (.cols mat)]
-    (cv/resize! mat (cv/new-size (* width factor) (* height factor)) )))
 
 (defn matrix-to-mat [matrix mat array-fn]
 (map-indexed
@@ -107,71 +132,7 @@ matrix))
 (defn mat-from [src]
   (Mat. (.rows src) (.cols src) (.type src)))
 
-(defn mat-to-buffered-image [src]
-  (let[ matOfBytes (MatOfByte.)]
-  (Imgcodecs/imencode ".jpg" src matOfBytes)
-  (ImageIO/read
-    (java.io.ByteArrayInputStream. (.toArray matOfBytes)))))
-
-(defn buffered-image-to-mat[bi]
-  (let [mat (Mat. (.getHeight bi) (.getWidth bi) (CvType/CV_8UC3))
-  bytes
-  (-> bi
-    (.getRaster)
-    (.getDataBuffer)
-    (.getData)
-    )]
-    (.put mat 0 0 bytes)
-    mat))
-
-; points
-(defn middle-of-two-points [p1 p2]
-  (cv/new-point
-    (/ (+ (.-x p1) (.-x p2)) 2)
-    (/ (+ (.-y p1) (.-y p2)) 2)))
-
-(defn bytes-to-mat![mat bytes]
-     (.put mat 0 0 bytes);
-     mat)
-
-(defn mat-to-bytes[mat]
-  (let [bytes (byte-array (* (.total mat) (.channels mat))) ]
-  (.get mat 0 0 bytes)
-  bytes))
-
-(defn pixel-map!
-  "Applies a function to each pixel. Very slow."
-  [im fn_]
-  (let [buffer (cv/->bytes im)
-        pixels (partition 3 buffer)]
-    (->> pixels
-         (map fn_ )
-         (flatten)
-         (byte-array)
-         (.put im 0 0))
-    im))
-
-(defn center-of-rect [ rect ]
-  (middle-of-two-points (.tl rect) (.br rect)))
-
-(defn distance-of-two-points [p1 p2]
-  (let [ xd (- (.x p1) (.x p2)) yd (- (.y p1) (.y p2))]
-  (Math/sqrt (+ (Math/pow xd 2) (Math/pow yd 2)))))
-
-; gorilla repl
-(defn mat-view[img]
-  	(image-view (mat-to-buffered-image img)))
-
-(defn image-from-url[url]
-  (let[ connection (->  url
-	(java.net.URL.)
-    (.openConnection))]
-    (.setRequestProperty connection
-      "User-Agent"
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/26.0.1410.65 Safari/537.31")
-      (ImageIO/read (.getInputStream connection))))
-
-(defn mat-from-url2 [url option]
+(defn mat<-url [url option]
   (let [
         tmp-file (File/createTempFile "temp-image" ".tmp")
         fos (FileOutputStream. tmp-file)
@@ -189,20 +150,70 @@ matrix))
 (.disconnect connection)
   (cv/imread (.getAbsolutePath tmp-file) option)))
 
-
 (defn mat-from-url
   ([url]
-  (buffered-image-to-mat (image-from-url url)))
+  (image->mat (image<-url url)))
   ([url option]
-  (mat-from-url2 url option)))
+  (mat<-url url option)))
 
-(defn annotate![mat text]
+;;;
+; MAT OPERATIONS
+;;;
+(defn resize-by[ mat factor]
+  (let [height (.rows mat) width (.cols mat)]
+    (cv/resize! mat (cv/new-size (* width factor) (* height factor)) )))
+
+(defn split3! [org]
+  (let [splits (cv/split! org)
+        [r g b :as arrays] (reverse (map cv/->bytes splits))]
+    (byte-array (for [ar arrays i ar] i)))) 
+(def mat->flat-rgb-array split3!)
+
+(defn merge3! [mat bytes]
+  (let [h (.height mat)
+        w (.width mat)
+        spatial-size (* h w)
+        byte-arrays (reverse (partition spatial-size bytes))
+        mats (map #(->cv1 % h w) byte-arrays)]
+    (cv/merge! mats mat)))
+
+(defn pixel-map!
+  "Applies a function to each pixel. Very slow."
+  [im fn_]
+  (println "Try to avoid using pixel-map ...")
+  (let [buffer (cv/->bytes im)
+        pixels (partition 3 buffer)]
+    (->> pixels
+         (map fn_ )
+         (flatten)
+         (byte-array)
+         (.put im 0 0))
+    im))
+
+;;;;
+; GEOMETRY
+;;;;
+
+(defn middle-of-two-points [p1 p2]
+  (cv/new-point
+    (/ (+ (.-x p1) (.-x p2)) 2)
+    (/ (+ (.-y p1) (.-y p2)) 2)))
+
+(defn center-of-rect [ rect ]
+  (middle-of-two-points (.tl rect) (.br rect)))
+
+(defn distance-of-two-points [p1 p2]
+  (let [ xd (- (.x p1) (.x p2)) yd (- (.y p1) (.y p2))]
+  (Math/sqrt (+ (Math/pow xd 2) (Math/pow yd 2)))))
+
+
+(defn annotate! [mat text]
  (cv/put-text mat
   text (cv/new-point 100 100) cv/FONT_HERSHEY_PLAIN 1 (cv/new-scalar 255 0 0) 1)
  mat)
 
 ;;;
-; CONTOURS
+; DRAW CONTOURS
 ;;;
 (defn draw-contours-with-rect!
 ([buffer contours] (draw-contours-with-rect! buffer contours false))
@@ -217,8 +228,7 @@ matrix))
          (cv/new-point (.x rect) (.y rect))
          (cv/new-point (+ (.width rect) (.x rect)) (+ (.y rect) (.height rect)))
          (cv/new-scalar 255 0 0) 3))))
-         buffer
-         )))
+         buffer)))
 
 (defn draw-contours-with-line! [img contours]
 (dotimes [i (.size contours)]
@@ -228,7 +238,6 @@ matrix))
       ret (cv/new-matofpoint2f)
       approx (cv/approx-poly-dp m2f ret (* 0.005 len) true)
       nb-sides (.size (.toList ret))]
-; (println ">" nb-sides)
 (cv/draw-contours img contours i
  (condp = nb-sides
   3  (cv/new-scalar 56.09 68.05 66.27)
@@ -247,7 +256,7 @@ matrix))
 ; SWING
 ;;;
 
-(defn re-show[pane mat]
+(defn re-show [pane mat]
   (let[image (.getIcon (first (.getComponents pane)))]
   (.setImage image (mat-to-buffered-image mat))
   (doto pane
@@ -353,7 +362,7 @@ matrix))
          (re-show window (myvideofn (cv/clone buffer))))))
        (.release capture)))))))
 
-(defn start-cam-thread [ window device-map buffer-atom]
+(defn- start-cam-thread [ window device-map buffer-atom]
     (.start (Thread.
       (fn []
         (println ">> Starting: " (-> device-map :device) " << ")

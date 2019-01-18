@@ -17,13 +17,19 @@
     :plugins [[quickie "0.4.1"]]
     :source-paths ["dev"]
     :dependencies [
-    ; testing
+    ; integrations
     [org.apache.mxnet.contrib.clojure/clojure-mxnet "1.5.0-SNAPSHOT"]
+    [hellonico/gorilla-repl "0.4.1" :exclusions [
+    [ch.qos.logback/logback-classic]
+    [org.slf4j/slf4j-api]]]                 
+    ; [hellonico/gorilla-repl "0.4.1"]       
+    
+    [org.clojure/clojure "1.10.0"]
     ; used for api code only
     [camel-snake-kebab "0.4.0"]]}}
   :dependencies [
-  	[org.clojure/clojure "1.10.0"]
+    [org.scijava/native-lib-loader "2.3.1" :exclusions [[org.slf4j/slf4j-api]]]                 
     [org.scijava/native-lib-loader "2.3.1"]                 
     [opencv/opencv "4.0.0-0"]
     [opencv/opencv-native "4.0.0-1"]
-    [hellonico/gorilla-repl "0.4.1"]])
+    ])
